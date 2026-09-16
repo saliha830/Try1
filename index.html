@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Virtual Lab — Vernier Caliper</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;font-family:Arial,sans-serif;background:#111827;color:#fff}
+#app{height:100%;display:flex;flex-direction:column}
+header{padding:10px 14px;background:#0b1220;display:flex;justify-content:space-between;align-items:center;z-index:2}
+h1{font-size:16px;margin:0}.hint{font-size:11px;color:#b9c2d0}
+#stage{position:relative;flex:1;min-height:0}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#panel{background:#0b1220;padding:10px;display:flex;gap:8px;flex-wrap:wrap;z-index:2}
+button{background:#243044;color:white;border:1px solid #52627a;border-radius:8px;padding:9px 11px}
+button:active{transform:scale(.97)}
+#status{position:absolute;left:10px;top:10px;background:#0009;padding:7px 9px;border-radius:8px;font-size:12px;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="app">
+<header><h1>Virtual Lab — Vernier Caliper</h1><div class="hint">Drag: rotate • Pinch: zoom</div></header>
+<div id="stage"><div id="status">Loading 3D caliper…</div></div>
+<div id="panel">
+<button id="front">Front</button><button id="back">Back</button><button id="top">Top</button>
+<button id="reset">Reset</button>
+</div>
+</div>
+
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
+import {OrbitControls} from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js";
+
+const stage=document.getElementById("stage"), status=document.getElementById("status");
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x111827);
+
+const camera=new THREE.PerspectiveCamera(42,stage.clientWidth/stage.clientHeight,.1,100);
+camera.position.set(0,5.5,10);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.8));
+renderer.setSize(stage.clientWidth,stage.clientHeight);
+stage.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x334155,2.2));
+const key=new THREE.DirectionalLight(0xffffff,3);
+key.position.set(4,8,7); scene.add(key);
+
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=.07;
+controls.enablePan=true; controls.minDistance=5; controls.maxDistance=22;
+controls.target.set(0,0,0);
+
+const caliper=new THREE.Group(); scene.add(caliper);
+
+// Caliper geometry: main beam, fixed jaw, slider, moving jaw, depth rod, scales and markings.
+const metal=new THREE.MeshStandardMaterial({color:0xbfc7d1,metalness:.8,roughness:.28});
+const darkMetal=new THREE.MeshStandardMaterial({color:0x65707d,metalness:.75,roughness:.3});
+const black=new THREE.MeshBasicMaterial({color:0x111111});
+const brass=new THREE.MeshStandardMaterial({color:0xc8a45a,metalness:.65,roughness:.3});
+
+function box(name,x,y,z,sx,sy,sz,mat=metal,parent=caliper){
+ const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.name=name;m.position.set(x,y,z);parent.add(m);return m;
+}
+// Main beam
+box("Main beam",0,0,0,11,.45,.7);
+// upper ridge
+box("Upper ridge",0,.55,0,11,.18,.48,darkMetal);
+
+// fixed jaw at left
+box("Fixed jaw",-5,1.15,0,.65,2.2,.7);
+box("Fixed measuring face",-4.68,2.1,0,.16,1.0,.9,darkMetal);
+
+// slider and moving jaw
+const slider=new THREE.Group(); slider.position.x=1.4; caliper.add(slider);
+box("Slider body",0,.48,0,3.0,1.0,.95,darkMetal,slider);
+box("Moving jaw",1.0,1.45,0,.6,2.5,.7,metal,slider);
+box("Moving measuring face",.68,2.2,0,.16,1.0,.9,darkMetal,slider);
+
+// depth rod
+box("Depth rod",1.4,-.55,0,4.2,.18,.18,brass,slider);
+
+// lower locking screw
+const screw=new THREE.Mesh(new THREE.CylinderGeometry(.38,.38,.3,24),brass);
+screw.rotation.z=Math.PI/2;screw.position.set(1.4,.05,.58);slider.add(screw);
+
+// scale labels represented by long/short tick marks
+function tick(x,height,width){
+ box("scale tick",x,.28,.37,width,height,.08,black);
+}
+for(let i=-50;i<=50;i++){
+ const x=i*.1;
+ const h=(i%10===0)? .28 : (i%5===0 ? .20 : .13);
+ tick(x,h,.018);
+}
+for(let i=-5;i<=5;i++){
+ const x=i;
+ box("number marker",x,.68,.37,.025,.12,.08,black);
+}
+
+// Vernier scale on slider, 10 divisions
+for(let i=0;i<=10;i++){
+ const x=(i-5)*.16;
+ const h=(i===0||i===10)?.24:.14;
+ box("vernier tick",x,.98,.5,.018,h,.08,black,slider);
+}
+
+// Add a sphere as a measurement object, initially hidden
+const sphereMat=new THREE.MeshStandardMaterial({color:0x3b82f6,metalness:.15,roughness:.35});
+const sphere=new THREE.Mesh(new THREE.SphereGeometry(1,32,20),sphereMat);
+sphere.position.set(-1.65,1.05,0); sphere.visible=false; caliper.add(sphere);
+
+function setView(pos,target=[0,0,0]){
+ camera.position.set(...pos); controls.target.set(...target); controls.update();
+}
+document.getElementById("front").onclick=()=>setView([0,2,11]);
+document.getElementById("back").onclick=()=>setView([0,2,-11]);
+document.getElementById("top").onclick=()=>setView([0,11,.1]);
+document.getElementById("reset").onclick=()=>{setView([0,5.5,10]);slider.position.x=1.4;sphere.visible=false};
+
+function resize(){
+ const w=stage.clientWidth,h=stage.clientHeight;
+ camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
+}
+addEventListener("resize",resize);
+
+status.textContent="3D caliper ready";
+setTimeout(()=>status.style.display="none",2200);
+
+function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera)}
+animate();
+</script>
+</body>
+  </html>
