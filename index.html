@@ -1,27 +1,255 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Precision Vernier Caliper</title>
-<style>*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#030405;color:#fff;font-family:Arial,sans-serif}#app{height:100%;display:flex;flex-direction:column}header{padding:10px 14px;background:linear-gradient(#15191e,#07090b);border-bottom:1px solid #3b4148;z-index:2}.title{font-weight:700;font-size:15px;letter-spacing:.3px}.sub{font-size:10px;color:#aeb7c0;margin-top:2px}#stage{position:relative;flex:1;min-height:0}canvas{display:block;width:100%;height:100%;touch-action:none}#hint{position:absolute;top:10px;left:10px;padding:8px 10px;border:1px solid #444b53;border-radius:9px;background:#050607cc;color:#cbd2d9;font-size:11px;pointer-events:none}#status{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:12px 16px;border:1px solid #555e67;border-radius:10px;background:#050607e8;font-size:12px}#panel{padding:9px;display:flex;gap:7px;background:linear-gradient(#11151a,#07090b);border-top:1px solid #343a42;z-index:2}button{padding:9px 11px;border:1px solid #59616a;border-radius:8px;background:linear-gradient(#30363d,#171b20);color:#eef1f4;font-size:12px}button:active{transform:scale(.97)}.hide{display:none}</style></head><body><div id="app"><header><div class="title">VIRTUAL LAB · PRECISION VERNIER CALIPER</div><div class="sub">Interactive 3D laboratory instrument</div></header><div id="stage"><div id="hint">Drag with one finger to rotate • pinch to zoom</div><div id="status">Loading precision instrument…</div></div><div id="panel"><button id="front">FRONT</button><button id="back">BACK</button><button id="top">TOP</button><button id="reset">RESET</button></div></div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Virtual Lab - Precision Vernier Caliper</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#020304;color:#fff;font-family:Arial,sans-serif}
+#app{width:100%;height:100%;display:flex;flex-direction:column}
+header{height:62px;padding:9px 14px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(#171b20,#07090b);border-bottom:1px solid #454b52;z-index:5}
+.title{font-size:15px;font-weight:700;letter-spacing:.5px}.sub{font-size:10px;color:#9ca6b0;margin-top:3px}
+.badge{border:1px solid #59616a;border-radius:20px;padding:6px 9px;font-size:10px;background:#11151a;color:#dfe4e8}
+#stage{position:relative;flex:1;min-height:0}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#hint{position:absolute;top:12px;left:12px;background:#050607d9;border:1px solid #454c54;border-radius:10px;padding:9px 11px;font-size:11px;color:#cbd1d7;pointer-events:none;box-shadow:0 8px 25px #0008}
+#panel{display:flex;gap:7px;flex-wrap:wrap;padding:9px;background:linear-gradient(#12161b,#07090b);border-top:1px solid #353b42;z-index:5}
+button{padding:9px 11px;border-radius:8px;border:1px solid #5a626a;background:linear-gradient(#343a41,#181c21);color:#f2f4f6;font-size:11px;font-weight:600}
+button:active{transform:scale(.97)}
+#loading{position:absolute;inset:0;display:grid;place-items:center;background:#020304ee;z-index:10;font-size:13px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+<div><div class="title">VIRTUAL LAB · PRECISION VERNIER CALIPER</div><div class="sub">Interactive 3D laboratory instrument</div></div>
+<div class="badge">3D • TOUCH</div>
+</header>
+<div id="stage">
+<div id="loading">Building precision Vernier caliper…</div>
+<div id="hint">One finger: rotate &nbsp;•&nbsp; Two fingers: zoom/pan</div>
+</div>
+<div id="panel">
+<button onclick="frontView()">FRONT</button>
+<button onclick="backView()">BACK</button>
+<button onclick="topView()">TOP</button>
+<button onclick="resetView()">RESET</button>
+</div>
+</div>
+
 <script type="module">
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
 import {OrbitControls} from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js";
-const stage=document.querySelector("#stage"),status=document.querySelector("#status"),scene=new THREE.Scene();scene.background=new THREE.Color(0x030405);
-const camera=new THREE.PerspectiveCamera(38,stage.clientWidth/stage.clientHeight,.1,100);camera.position.set(0,5.5,13);
-const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(stage.clientWidth,stage.clientHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;stage.appendChild(renderer.domElement);
-scene.add(new THREE.HemisphereLight(0xffffff,0x20252b,2));let key=new THREE.DirectionalLight(0xffffff,4);key.position.set(5,10,9);scene.add(key);let rim=new THREE.DirectionalLight(0x9fb7cc,3);rim.position.set(-8,5,-10);scene.add(rim);
-const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.065;controls.enablePan=true;controls.minDistance=6;controls.maxDistance=24;controls.target.set(0,.3,0);
-const caliper=new THREE.Group();scene.add(caliper);
-const steel=new THREE.MeshPhysicalMaterial({color:0xc7cdd3,metalness:.95,roughness:.2,clearcoat:.7,clearcoatRoughness:.12}),polished=new THREE.MeshPhysicalMaterial({color:0xe8ecef,metalness:1,roughness:.1,clearcoat:1}),brushed=new THREE.MeshPhysicalMaterial({color:0x8d97a1,metalness:.98,roughness:.3}),dark=new THREE.MeshPhysicalMaterial({color:0x3d454d,metalness:.95,roughness:.24}),black=new THREE.MeshStandardMaterial({color:0x15181b,metalness:.25,roughness:.5}),gold=new THREE.MeshPhysicalMaterial({color:0xa98a52,metalness:.9,roughness:.22});
-function box(n,x,y,z,sx,sy,sz,m=steel,parent=caliper){let q=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);q.name=n;q.position.set(x,y,z);parent.add(q);return q}function cyl(n,r,d,x,y,z,m=steel,parent=caliper){let q=new THREE.Mesh(new THREE.CylinderGeometry(r,r,d,32),m);q.name=n;q.position.set(x,y,z);parent.add(q);return q}
-box("Main precision beam",0,0,0,12,.55,.82,brushed);box("Polished upper rail",0,.37,0,12,.13,.62,polished);box("Lower rail",0,-.34,0,12,.12,.55,dark);
-box("Fixed jaw",-5.35,1.35,0,.72,2.55,.84,steel);box("Fixed neck",-4.95,.72,0,.45,1.45,.84,brushed);box("Fixed measuring face",-4.7,2.18,0,.14,1.05,.98,polished);box("Fixed contact",-4.6,2.18,0,.09,.88,1,dark);
-const slider=new THREE.Group();slider.position.x=1.25;caliper.add(slider);box("Slider body",0,.47,0,3.15,1.02,1.05,dark,slider);box("Slider top",0,.98,0,3,.14,.82,polished,slider);box("Moving jaw",1.05,1.52,0,.7,2.75,.86,steel,slider);box("Moving neck",.7,.72,0,.42,1.55,.86,brushed,slider);box("Moving measuring face",.68,2.2,0,.14,1.05,.98,polished,slider);box("Moving contact",.58,2.2,0,.09,.88,1,dark,slider);
-let wheel=cyl("Thumb wheel",.47,.38,.05,.35,.65,dark,slider);wheel.rotation.z=Math.PI/2;for(let i=0;i<16;i++){let a=i*Math.PI*2/16,q=box("Wheel grip",.05+Math.cos(a)*.48,.35+Math.sin(a)*.48,.65,.08,.055,.15,brushed,slider);q.rotation.z=a}let screw=cyl("Lock screw",.27,.34,.55,.58,.68,gold,slider);screw.rotation.z=Math.PI/2;
-box("Depth rod",1.25,-.58,0,4.1,.17,.2,polished,slider);
-box("Main scale face",0,.2,.43,11.7,.3,.055,polished);for(let i=-55;i<=55;i++){let x=i*.1,h=i%10===0?.25:i%5===0?.18:.105;box("Main tick",x,.4,.47,.018,h,.035,black)}
-box("Vernier face",0,.91,.49,2.05,.38,.06,polished,slider);for(let i=0;i<=10;i++){let x=-.92+i*.184,h=(i===0||i===10)?.24:.145;box("Vernier tick",x,1.13,.53,.016,h,.035,black,slider)}box("Vernier zero",-0.92,1.38,.53,.035,.16,.045,gold,slider);
-for(let x=-4;x<=4;x+=1){let q=cyl("Fastener",.055,.06,x,-.02,.46,gold);q.rotation.x=Math.PI/2}
-const sphere=new THREE.Mesh(new THREE.SphereGeometry(1,32,20),new THREE.MeshPhysicalMaterial({color:0x8ea9bf,metalness:.55,roughness:.16,clearcoat:.7}));sphere.position.set(-1.65,1.15,0);sphere.visible=false;caliper.add(sphere);
-const floor=new THREE.Mesh(new THREE.CircleGeometry(13,64),new THREE.MeshStandardMaterial({color:0x07090b,metalness:.65,roughness:.28}));floor.rotation.x=-Math.PI/2;floor.position.y=-1.05;scene.add(floor);
-function view(p){camera.position.set(...p);controls.target.set(0,.3,0);controls.update()}document.querySelector("#front").onclick=()=>view([0,2.7,13]);document.querySelector("#back").onclick=()=>view([0,2.7,-13]);document.querySelector("#top").onclick=()=>view([0,13,.15]);document.querySelector("#reset").onclick=()=>view([0,5.5,13]);
-addEventListener("resize",()=>{camera.aspect=stage.clientWidth/stage.clientHeight;camera.updateProjectionMatrix();renderer.setSize(stage.clientWidth,stage.clientHeight)});status.textContent="Precision 3D caliper ready";setTimeout(()=>status.classList.add("hide"),1600);
-(function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera)})();
-</script></body></html>
+
+const stage=document.getElementById("stage");
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x020304);
+
+const camera=new THREE.PerspectiveCamera(35,stage.clientWidth/stage.clientHeight,.1,100);
+camera.position.set(0,5.8,15);
+
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(stage.clientWidth,stage.clientHeight);
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.25;
+stage.appendChild(renderer.domElement);
+
+/* Premium studio lighting */
+scene.add(new THREE.HemisphereLight(0xf4f7fa,0x10151b,2.2));
+
+const key=new THREE.DirectionalLight(0xffffff,5);
+key.position.set(5,9,10);
+scene.add(key);
+
+const rim=new THREE.DirectionalLight(0xb9cde0,4);
+rim.position.set(-8,5,-10);
+scene.add(rim);
+
+const frontLight=new THREE.PointLight(0xffffff,55,30);
+frontLight.position.set(0,4,8);
+scene.add(frontLight);
+
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+controls.dampingFactor=.055;
+controls.enablePan=true;
+controls.screenSpacePanning=true;
+controls.minDistance=7;
+controls.maxDistance=27;
+controls.target.set(0,.3,0);
+
+const caliper=new THREE.Group();
+scene.add(caliper);
+
+/* Materials */
+const steel=new THREE.MeshPhysicalMaterial({
+color:0xbfc6cd,metalness:.97,roughness:.22,clearcoat:.8,clearcoatRoughness:.12
+});
+const polished=new THREE.MeshPhysicalMaterial({
+color:0xf0f3f5,metalness:1,roughness:.075,clearcoat:1,clearcoatRoughness:.06
+});
+const brushed=new THREE.MeshPhysicalMaterial({
+color:0x87919b,metalness:.98,roughness:.31,clearcoat:.35
+});
+const darkSteel=new THREE.MeshPhysicalMaterial({
+color:0x3b444c,metalness:.94,roughness:.24
+});
+const scaleBlack=new THREE.MeshStandardMaterial({
+color:0x101316,metalness:.15,roughness:.5
+});
+const marking=new THREE.MeshStandardMaterial({
+color:0x080a0c,metalness:.05,roughness:.7
+});
+const gold=new THREE.MeshPhysicalMaterial({
+color:0xb08d50,metalness:.92,roughness:.2,clearcoat:.45
+});
+
+function box(name,x,y,z,w,h,d,mat=steel,parent=caliper){
+const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+m.name=name;m.position.set(x,y,z);parent.add(m);return m;
+}
+function cyl(name,r,depth,x,y,z,mat=steel,parent=caliper,segments=32){
+const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,depth,segments),mat);
+m.name=name;m.position.set(x,y,z);parent.add(m);return m;
+}
+
+/* MAIN BODY / BEAM */
+box("Main stainless steel beam",0,0,0,13,.58,.82,brushed);
+box("Polished upper beam",0,.39,0,13,.15,.68,polished);
+box("Lower structural rail",0,-.34,0,13,.13,.56,darkSteel);
+
+/* MAIN SCALE FACE */
+box("Main scale plate",0,.18,.46,12.55,.32,.055,polished);
+
+/* Main scale ticks: 0.1-unit divisions */
+for(let i=-60;i<=60;i++){
+const x=i*.1;
+const h=(i%10===0)?.28:(i%5===0?.20:.115);
+box("Main scale marking",x,.405,.505,.018,h,.035,marking);
+}
+/* Major engraved-style lines */
+for(let i=-6;i<=6;i++){
+box("Major scale line",i,.64,.505,.028,.13,.04,marking);
+}
+
+/* FIXED OUTSIDE JAW */
+box("Fixed jaw body",-5.55,1.42,0,.78,2.75,.92,steel);
+box("Fixed jaw support",-5.10,.75,0,.52,1.55,.92,brushed);
+
+/* Fixed inside measuring jaw */
+box("Fixed inner jaw",-4.82,2.25,0,.32,1.25,.92,polished);
+box("Fixed measuring face",-4.64,2.25,0,.11,.95,1.03,darkSteel);
+
+/* OUTSIDE JAW TIP */
+box("Fixed jaw tip",-4.54,2.83,0,.55,.18,1.03,polished);
+
+/* MOVING CARRIAGE */
+const slider=new THREE.Group();
+slider.position.x=1.45;
+caliper.add(slider);
+
+box("Vernier carriage",0,.50,0,3.25,1.08,1.08,darkSteel,slider);
+box("Carriage polished top",0,1.04,0,3.08,.14,.86,polished,slider);
+box("Carriage lower block",0,-.08,0,2.95,.30,.88,brushed,slider);
+
+/* MOVING JAW */
+box("Moving jaw body",1.12,1.52,0,.76,2.85,.92,steel,slider);
+box("Moving jaw support",.78,.76,0,.50,1.55,.92,brushed,slider);
+box("Moving inner jaw",.67,2.25,0,.32,1.25,.92,polished,slider);
+box("Moving measuring face",.51,2.25,0,.11,.95,1.03,darkSteel,slider);
+box("Moving jaw tip",.43,2.83,0,.55,.18,1.03,polished,slider);
+
+/* DEPTH ROD */
+box("Depth measurement rod",1.42,-.62,0,4.3,.18,.20,polished,slider);
+
+/* LOCKING SCREW */
+let lock=cyl("Locking screw",.28,.42,.55,.64,.67,gold,slider,36);
+lock.rotation.z=Math.PI/2;
+cyl("Lock cap",.39,.16,.55,.64,.67,brushed,slider,36).rotation.z=Math.PI/2;
+
+/* THUMB WHEEL */
+let wheel=cyl("Fine adjustment thumb wheel",.46,.40,.03,.34,.67,darkSteel,slider,48);
+wheel.rotation.z=Math.PI/2;
+
+for(let i=0;i<18;i++){
+const a=i*Math.PI*2/18;
+const q=box("Thumb wheel grip",
+.03+Math.cos(a)*.48,
+.34+Math.sin(a)*.48,
+.67,
+.09,.045,.18,
+brushed,slider);
+q.rotation.z=a;
+}
+
+/* VERNIER SCALE */
+box("Vernier scale plate",0,.93,.54,2.15,.42,.065,polished,slider);
+
+for(let i=0;i<=10;i++){
+const x=-.98+i*.196;
+const h=(i===0||i===10)?.25:.15;
+box("Vernier marking",x,1.14,.575,.018,h,.035,marking,slider);
+}
+/* Vernier zero */
+box("Vernier zero",-.98,1.42,.575,.035,.18,.045,gold,slider);
+
+/* Small fasteners along the beam */
+for(let x=-4.2;x<=4.2;x+=1.05){
+let f=cyl("Precision fastener",.055,.065,x,-.01,.49,gold,caliper,18);
+f.rotation.x=Math.PI/2;
+}
+
+/* INTERNAL GROOVE / SHADOW DETAIL */
+box("Beam central groove",0,-.02,.43,11.7,.09,.04,darkSteel);
+
+/* A measurement sphere, hidden for this visual-only stage */
+const sphere=new THREE.Mesh(
+new THREE.SphereGeometry(1,32,24),
+new THREE.MeshPhysicalMaterial({color:0x8fa8ba,metalness:.55,roughness:.16,clearcoat:.8})
+);
+sphere.position.set(-1.7,1.15,0);
+sphere.visible=false;
+caliper.add(sphere);
+
+/* Dark presentation floor */
+const floor=new THREE.Mesh(
+new THREE.CircleGeometry(18,64),
+new THREE.MeshStandardMaterial({color:0x050607,metalness:.7,roughness:.3})
+);
+floor.rotation.x=-Math.PI/2;
+floor.position.y=-1.15;
+scene.add(floor);
+
+function setView(x,y,z){
+camera.position.set(x,y,z);
+controls.target.set(0,.35,0);
+controls.update();
+}
+window.frontView=()=>setView(0,2.8,15);
+window.backView=()=>setView(0,2.8,-15);
+window.topView=()=>setView(0,14,.2);
+window.resetView=()=>setView(0,5.8,15);
+
+function resize(){
+const w=stage.clientWidth,h=stage.clientHeight;
+camera.aspect=w/h;
+camera.updateProjectionMatrix();
+renderer.setSize(w,h);
+}
+window.addEventListener("resize",resize);
+
+document.getElementById("loading").classList.add("hide");
+
+function animate(){
+requestAnimationFrame(animate);
+controls.update();
+renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+  </html>
