@@ -1,135 +1,27 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Virtual Lab — Vernier Caliper</title>
-<style>
-*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;font-family:Arial,sans-serif;background:#111827;color:#fff}
-#app{height:100%;display:flex;flex-direction:column}
-header{padding:10px 14px;background:#0b1220;display:flex;justify-content:space-between;align-items:center;z-index:2}
-h1{font-size:16px;margin:0}.hint{font-size:11px;color:#b9c2d0}
-#stage{position:relative;flex:1;min-height:0}
-canvas{display:block;width:100%;height:100%;touch-action:none}
-#panel{background:#0b1220;padding:10px;display:flex;gap:8px;flex-wrap:wrap;z-index:2}
-button{background:#243044;color:white;border:1px solid #52627a;border-radius:8px;padding:9px 11px}
-button:active{transform:scale(.97)}
-#status{position:absolute;left:10px;top:10px;background:#0009;padding:7px 9px;border-radius:8px;font-size:12px;pointer-events:none}
-</style>
-</head>
-<body>
-<div id="app">
-<header><h1>Virtual Lab — Vernier Caliper</h1><div class="hint">Drag: rotate • Pinch: zoom</div></header>
-<div id="stage"><div id="status">Loading 3D caliper…</div></div>
-<div id="panel">
-<button id="front">Front</button><button id="back">Back</button><button id="top">Top</button>
-<button id="reset">Reset</button>
-</div>
-</div>
-
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Precision Vernier Caliper</title>
+<style>*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#030405;color:#fff;font-family:Arial,sans-serif}#app{height:100%;display:flex;flex-direction:column}header{padding:10px 14px;background:linear-gradient(#15191e,#07090b);border-bottom:1px solid #3b4148;z-index:2}.title{font-weight:700;font-size:15px;letter-spacing:.3px}.sub{font-size:10px;color:#aeb7c0;margin-top:2px}#stage{position:relative;flex:1;min-height:0}canvas{display:block;width:100%;height:100%;touch-action:none}#hint{position:absolute;top:10px;left:10px;padding:8px 10px;border:1px solid #444b53;border-radius:9px;background:#050607cc;color:#cbd2d9;font-size:11px;pointer-events:none}#status{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:12px 16px;border:1px solid #555e67;border-radius:10px;background:#050607e8;font-size:12px}#panel{padding:9px;display:flex;gap:7px;background:linear-gradient(#11151a,#07090b);border-top:1px solid #343a42;z-index:2}button{padding:9px 11px;border:1px solid #59616a;border-radius:8px;background:linear-gradient(#30363d,#171b20);color:#eef1f4;font-size:12px}button:active{transform:scale(.97)}.hide{display:none}</style></head><body><div id="app"><header><div class="title">VIRTUAL LAB · PRECISION VERNIER CALIPER</div><div class="sub">Interactive 3D laboratory instrument</div></header><div id="stage"><div id="hint">Drag with one finger to rotate • pinch to zoom</div><div id="status">Loading precision instrument…</div></div><div id="panel"><button id="front">FRONT</button><button id="back">BACK</button><button id="top">TOP</button><button id="reset">RESET</button></div></div>
 <script type="module">
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
 import {OrbitControls} from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js";
-
-const stage=document.getElementById("stage"), status=document.getElementById("status");
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x111827);
-
-const camera=new THREE.PerspectiveCamera(42,stage.clientWidth/stage.clientHeight,.1,100);
-camera.position.set(0,5.5,10);
-
-const renderer=new THREE.WebGLRenderer({antialias:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,1.8));
-renderer.setSize(stage.clientWidth,stage.clientHeight);
-stage.appendChild(renderer.domElement);
-
-scene.add(new THREE.HemisphereLight(0xffffff,0x334155,2.2));
-const key=new THREE.DirectionalLight(0xffffff,3);
-key.position.set(4,8,7); scene.add(key);
-
-const controls=new OrbitControls(camera,renderer.domElement);
-controls.enableDamping=true; controls.dampingFactor=.07;
-controls.enablePan=true; controls.minDistance=5; controls.maxDistance=22;
-controls.target.set(0,0,0);
-
-const caliper=new THREE.Group(); scene.add(caliper);
-
-// Caliper geometry: main beam, fixed jaw, slider, moving jaw, depth rod, scales and markings.
-const metal=new THREE.MeshStandardMaterial({color:0xbfc7d1,metalness:.8,roughness:.28});
-const darkMetal=new THREE.MeshStandardMaterial({color:0x65707d,metalness:.75,roughness:.3});
-const black=new THREE.MeshBasicMaterial({color:0x111111});
-const brass=new THREE.MeshStandardMaterial({color:0xc8a45a,metalness:.65,roughness:.3});
-
-function box(name,x,y,z,sx,sy,sz,mat=metal,parent=caliper){
- const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.name=name;m.position.set(x,y,z);parent.add(m);return m;
-}
-// Main beam
-box("Main beam",0,0,0,11,.45,.7);
-// upper ridge
-box("Upper ridge",0,.55,0,11,.18,.48,darkMetal);
-
-// fixed jaw at left
-box("Fixed jaw",-5,1.15,0,.65,2.2,.7);
-box("Fixed measuring face",-4.68,2.1,0,.16,1.0,.9,darkMetal);
-
-// slider and moving jaw
-const slider=new THREE.Group(); slider.position.x=1.4; caliper.add(slider);
-box("Slider body",0,.48,0,3.0,1.0,.95,darkMetal,slider);
-box("Moving jaw",1.0,1.45,0,.6,2.5,.7,metal,slider);
-box("Moving measuring face",.68,2.2,0,.16,1.0,.9,darkMetal,slider);
-
-// depth rod
-box("Depth rod",1.4,-.55,0,4.2,.18,.18,brass,slider);
-
-// lower locking screw
-const screw=new THREE.Mesh(new THREE.CylinderGeometry(.38,.38,.3,24),brass);
-screw.rotation.z=Math.PI/2;screw.position.set(1.4,.05,.58);slider.add(screw);
-
-// scale labels represented by long/short tick marks
-function tick(x,height,width){
- box("scale tick",x,.28,.37,width,height,.08,black);
-}
-for(let i=-50;i<=50;i++){
- const x=i*.1;
- const h=(i%10===0)? .28 : (i%5===0 ? .20 : .13);
- tick(x,h,.018);
-}
-for(let i=-5;i<=5;i++){
- const x=i;
- box("number marker",x,.68,.37,.025,.12,.08,black);
-}
-
-// Vernier scale on slider, 10 divisions
-for(let i=0;i<=10;i++){
- const x=(i-5)*.16;
- const h=(i===0||i===10)?.24:.14;
- box("vernier tick",x,.98,.5,.018,h,.08,black,slider);
-}
-
-// Add a sphere as a measurement object, initially hidden
-const sphereMat=new THREE.MeshStandardMaterial({color:0x3b82f6,metalness:.15,roughness:.35});
-const sphere=new THREE.Mesh(new THREE.SphereGeometry(1,32,20),sphereMat);
-sphere.position.set(-1.65,1.05,0); sphere.visible=false; caliper.add(sphere);
-
-function setView(pos,target=[0,0,0]){
- camera.position.set(...pos); controls.target.set(...target); controls.update();
-}
-document.getElementById("front").onclick=()=>setView([0,2,11]);
-document.getElementById("back").onclick=()=>setView([0,2,-11]);
-document.getElementById("top").onclick=()=>setView([0,11,.1]);
-document.getElementById("reset").onclick=()=>{setView([0,5.5,10]);slider.position.x=1.4;sphere.visible=false};
-
-function resize(){
- const w=stage.clientWidth,h=stage.clientHeight;
- camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
-}
-addEventListener("resize",resize);
-
-status.textContent="3D caliper ready";
-setTimeout(()=>status.style.display="none",2200);
-
-function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera)}
-animate();
-</script>
-</body>
-  </html>
+const stage=document.querySelector("#stage"),status=document.querySelector("#status"),scene=new THREE.Scene();scene.background=new THREE.Color(0x030405);
+const camera=new THREE.PerspectiveCamera(38,stage.clientWidth/stage.clientHeight,.1,100);camera.position.set(0,5.5,13);
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(stage.clientWidth,stage.clientHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;stage.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x20252b,2));let key=new THREE.DirectionalLight(0xffffff,4);key.position.set(5,10,9);scene.add(key);let rim=new THREE.DirectionalLight(0x9fb7cc,3);rim.position.set(-8,5,-10);scene.add(rim);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.065;controls.enablePan=true;controls.minDistance=6;controls.maxDistance=24;controls.target.set(0,.3,0);
+const caliper=new THREE.Group();scene.add(caliper);
+const steel=new THREE.MeshPhysicalMaterial({color:0xc7cdd3,metalness:.95,roughness:.2,clearcoat:.7,clearcoatRoughness:.12}),polished=new THREE.MeshPhysicalMaterial({color:0xe8ecef,metalness:1,roughness:.1,clearcoat:1}),brushed=new THREE.MeshPhysicalMaterial({color:0x8d97a1,metalness:.98,roughness:.3}),dark=new THREE.MeshPhysicalMaterial({color:0x3d454d,metalness:.95,roughness:.24}),black=new THREE.MeshStandardMaterial({color:0x15181b,metalness:.25,roughness:.5}),gold=new THREE.MeshPhysicalMaterial({color:0xa98a52,metalness:.9,roughness:.22});
+function box(n,x,y,z,sx,sy,sz,m=steel,parent=caliper){let q=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);q.name=n;q.position.set(x,y,z);parent.add(q);return q}function cyl(n,r,d,x,y,z,m=steel,parent=caliper){let q=new THREE.Mesh(new THREE.CylinderGeometry(r,r,d,32),m);q.name=n;q.position.set(x,y,z);parent.add(q);return q}
+box("Main precision beam",0,0,0,12,.55,.82,brushed);box("Polished upper rail",0,.37,0,12,.13,.62,polished);box("Lower rail",0,-.34,0,12,.12,.55,dark);
+box("Fixed jaw",-5.35,1.35,0,.72,2.55,.84,steel);box("Fixed neck",-4.95,.72,0,.45,1.45,.84,brushed);box("Fixed measuring face",-4.7,2.18,0,.14,1.05,.98,polished);box("Fixed contact",-4.6,2.18,0,.09,.88,1,dark);
+const slider=new THREE.Group();slider.position.x=1.25;caliper.add(slider);box("Slider body",0,.47,0,3.15,1.02,1.05,dark,slider);box("Slider top",0,.98,0,3,.14,.82,polished,slider);box("Moving jaw",1.05,1.52,0,.7,2.75,.86,steel,slider);box("Moving neck",.7,.72,0,.42,1.55,.86,brushed,slider);box("Moving measuring face",.68,2.2,0,.14,1.05,.98,polished,slider);box("Moving contact",.58,2.2,0,.09,.88,1,dark,slider);
+let wheel=cyl("Thumb wheel",.47,.38,.05,.35,.65,dark,slider);wheel.rotation.z=Math.PI/2;for(let i=0;i<16;i++){let a=i*Math.PI*2/16,q=box("Wheel grip",.05+Math.cos(a)*.48,.35+Math.sin(a)*.48,.65,.08,.055,.15,brushed,slider);q.rotation.z=a}let screw=cyl("Lock screw",.27,.34,.55,.58,.68,gold,slider);screw.rotation.z=Math.PI/2;
+box("Depth rod",1.25,-.58,0,4.1,.17,.2,polished,slider);
+box("Main scale face",0,.2,.43,11.7,.3,.055,polished);for(let i=-55;i<=55;i++){let x=i*.1,h=i%10===0?.25:i%5===0?.18:.105;box("Main tick",x,.4,.47,.018,h,.035,black)}
+box("Vernier face",0,.91,.49,2.05,.38,.06,polished,slider);for(let i=0;i<=10;i++){let x=-.92+i*.184,h=(i===0||i===10)?.24:.145;box("Vernier tick",x,1.13,.53,.016,h,.035,black,slider)}box("Vernier zero",-0.92,1.38,.53,.035,.16,.045,gold,slider);
+for(let x=-4;x<=4;x+=1){let q=cyl("Fastener",.055,.06,x,-.02,.46,gold);q.rotation.x=Math.PI/2}
+const sphere=new THREE.Mesh(new THREE.SphereGeometry(1,32,20),new THREE.MeshPhysicalMaterial({color:0x8ea9bf,metalness:.55,roughness:.16,clearcoat:.7}));sphere.position.set(-1.65,1.15,0);sphere.visible=false;caliper.add(sphere);
+const floor=new THREE.Mesh(new THREE.CircleGeometry(13,64),new THREE.MeshStandardMaterial({color:0x07090b,metalness:.65,roughness:.28}));floor.rotation.x=-Math.PI/2;floor.position.y=-1.05;scene.add(floor);
+function view(p){camera.position.set(...p);controls.target.set(0,.3,0);controls.update()}document.querySelector("#front").onclick=()=>view([0,2.7,13]);document.querySelector("#back").onclick=()=>view([0,2.7,-13]);document.querySelector("#top").onclick=()=>view([0,13,.15]);document.querySelector("#reset").onclick=()=>view([0,5.5,13]);
+addEventListener("resize",()=>{camera.aspect=stage.clientWidth/stage.clientHeight;camera.updateProjectionMatrix();renderer.setSize(stage.clientWidth,stage.clientHeight)});status.textContent="Precision 3D caliper ready";setTimeout(()=>status.classList.add("hide"),1600);
+(function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera)})();
+</script></body></html>
