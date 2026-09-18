@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Virtual Lab — Vernier Caliper</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: #08090a;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; touch-action: none; outline: none; }
+  #loading {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #08090a;
+    z-index: 20;
+    transition: opacity 0.5s ease;
+    padding: 32px;
+  }
+  #loading-text {
+    color: #8a8f94;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    text-align: center;
+    line-height: 1.6;
+    max-width: 300px;
+  }
+  #loading.error #loading-text { color: #cf9a9a; }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+  #hint {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 22px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 12px;
+    letter-spacing: 0.01em;
+    pointer-events: none;
+    z-index: 10;
+    transition: opacity 1.1s ease;
+  }
+  #hint.hidden { opacity: 0; }
+</style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="loading"><div id="loading-text">Preparing instrument…</div></div>
+  <div id="hint">Drag to rotate. Pinch to zoom.</div>
+
+  <script>
+    window.__viewerModuleStarted = false;
+    setTimeout(function () {
+      if (!window.__viewerModuleStarted) {
+        var loadingText = document.getElementById('loading-text');
+        var loadingBox = document.getElementById('loading');
+        if (loadingText && loadingBox) {
+          loadingBox.classList.add('error');
+          loadingBox.classList.remove('hidden');
+          loadingText.textContent =
+            'The 3D engine did not load. If you are previewing this inside a chat window, that window may block the outside code it needs \u2014 please try this same file after uploading it to GitHub Pages and opening the live link in a normal browser. If you are already in a normal browser, try reloading.';
+        }
+      }
+    }, 7000);
+  </script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.184.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+    window.__viewerModuleStarted = true;
+
+    /* ---------------------------------------------------------------
+       Tunable dimensions (millimetres; 1 Three.js unit = 1 mm)
+    --------------------------------------------------------------- */
+    const BEAM_LENGTH = 165;
+    const BEAM_HEIGHT = 22;
+    const BEAM_THICKNESS = 7;
+
+    const SCALE_START = 8;
+    const SCALE_LEN = 148;
+
+    const OUT_JAW_REACH = 40;
+    const OUT_JAW_ROOT_W = 15;
+    const OUT_JAW_TIP_W = 4.2;
+
+    const IN_JAW_REACH = 13;
+    const IN_JAW_ROOT_W = 10;
+
+    const JAW_DEPTH = 15;
+
+    const CARRIAGE_LEN = 30;
+    const CARRIAGE_OVERHANG = 3;
+
+    const DEPTH_ROD_DIA = 3;
+
+    const OPEN_GAP = 46;
+    const FIXED_JAW_X = 7;
+    const CARRIAGE_X = FIXED_JAW_X + OPEN_GAP;
+
+    const MAIN_SCALE_TOP = BEAM_HEIGHT / 2 - 1;
+    const MAIN_SCALE_HEIGHT = 9;
+    const MAIN_SCALE_CENTER_Y = MAIN_SCALE_TOP - MAIN_SCALE_HEIGHT / 2;
+
+    const VERNIER_HEIGHT = 6;
+    const VERNIER_SPAN_MM = 9;
+    const VERNIER_CENTER_Y = MAIN_SCALE_TOP - MAIN_SCALE_HEIGHT - 1 - VERNIER_HEIGHT / 2;
+
+    /* ---------------------------------------------------------------
+       DOM references + fatal error handling
+       (so a failure shows a message instead of a blank black screen)
+    --------------------------------------------------------------- */
+    const loadingEl = document.getElementById('loading');
+    const loadingTextEl = document.getElementById('loading-text');
+    const hintEl = document.getElementById('hint');
+    const appEl = document.getElementById('app');
+
+    function showFatalError(err) {
+      console.error(err);
+      if (loadingEl && loadingTextEl) {
+        loadingEl.classList.remove('hidden');
+        loadingEl.classList.add('error');
+        loadingTextEl.textContent =
+          'The 3D viewer could not start on this device. (' +
+          (err && err.message ? err.message : String(err)) + ')';
+      }
+    }
+
+    try {
+
+      /* ---------------------------------------------------------------
+         Helper functions (textures)
+      --------------------------------------------------------------- */
+      function createBackdropTexture() {
+        const size = 512;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const gradient = ctx.createRadialGradient(
+          size * 0.5, size * 0.4, size * 0.05,
+          size * 0.5, size * 0.5, size * 0.75
+        );
+        gradient.addColorStop(0, '#1d1e20');
+        gradient.addColorStop(0.55, '#111214');
+        gradient.addColorStop(1, '#050506');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, size, size);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        return texture;
+      }
+
+      function createKnurlTexture() {
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#8a8a8a';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#2b2b2b';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const step = 12;
+        for (let x = -size; x < size * 2; x += step) {
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x + size, size);
+        }
+        for (let x = -size; x < size * 2; x += step) {
+          ctx.moveTo(x, size);
+          ctx.lineTo(x + size, 0);
+        }
+        ctx.stroke();
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(8, 3);
+        return texture;
+      }
+
+      function drawRulerFace(ctx, width, height) {
+        ctx.fillStyle = '#c9ced3';
+        ctx.fillRect(0, 0, width, height);
+        const sheen = ctx.createLinearGradient(0, 0, 0, height);
+        sheen.addColorStop(0, 'rgba(255,255,255,0.18)');
+        sheen.addColorStop(0.55, 'rgba(255,255,255,0.02)');
+        sheen.addColorStop(1, 'rgba(0,0,0,0.14)');
+        ctx.fillStyle = sheen;
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      function createMainScaleTexture() {
+        const pxPerMm = 10;
+        const width = Math.round(SCALE_LEN * pxPerMm);
+        const height = 200;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        drawRulerFace(ctx, width, height);
+
+        const baselineY = height * 0.4;
+        ctx.strokeStyle = '#1c1d1f';
+        ctx.fillStyle = '#1c1d1f';
+        ctx.lineWidth = 2;
+        ctx.font = '600 42px -apple-system, Arial, sans-serif';
+        ctx.textAlign = 'center';
+
+        for (let mm = 0; mm <= SCALE_LEN; mm++) {
+          const x = mm * pxPerMm;
+          let tickH;
+          if (mm % 10 === 0) tickH = height * 0.32;
+          else if (mm % 5 === 0) tickH = height * 0.22;
+          else tickH = height * 0.13;
+          ctx.beginPath();
+          ctx.moveTo(x, baselineY);
+          ctx.lineTo(x, baselineY - tickH);
+          ctx.stroke();
+          if (mm % 10 === 0) {
+            ctx.fillText(String(mm / 10), x, baselineY - tickH - 10);
+          }
+        }
+        ctx.beginPath();
+        ctx.moveTo(0, baselineY);
+        ctx.lineTo(width, baselineY);
+        ctx.stroke();
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = 4;
+        return texture;
+      }
+
+      function createVernierScaleTexture() {
+        const divisions = 10;
+        const pxPerMm = 24;
+        const marginPx = 26;
+        const width = Math.round(VERNIER_SPAN_MM * pxPerMm) + marginPx * 2;
+        const height = 140;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        drawRulerFace(ctx, width, height);
+
+        const baselineY = height * 0.6;
+        const tickH = height * 0.38;
+        ctx.strokeStyle = '#1c1d1f';
+        ctx.fillStyle = '#1c1d1f';
+        ctx.lineWidth = 2;
+        ctx.font = '600 28px -apple-system, Arial, sans-serif';
+        ctx.textAlign = 'center';
+
+        for (let d = 0; d <= divisions; d++) {
+          const x = marginPx + (d * VERNIER_SPAN_MM * pxPerMm) / divisions;
+          ctx.beginPath();
+          ctx.moveTo(x, baselineY);
+          ctx.lineTo(x, baselineY - tickH);
+          ctx.stroke();
+          ctx.fillText(String(d), x, baselineY - tickH - 8);
+        }
+        ctx.beginPath();
+        ctx.moveTo(marginPx, baselineY);
+        ctx.lineTo(marginPx + VERNIER_SPAN_MM * pxPerMm, baselineY);
+        ctx.stroke();
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = 4;
+        return texture;
+      }
+
+      /* ---------------------------------------------------------------
+         Helper functions (geometry)
+         Jaw profiles are authored with their flat contact face at
+         local x = 0 and the solid body extending toward +x. The fixed
+         jaw reuses the exact same shape rotated 180 degrees, so its
+         contact face ends up facing the opposite way, toward the gap.
+      --------------------------------------------------------------- */
+      function buildOutsideJawShape() {
+        const reach = OUT_JAW_REACH;
+        const rootW = OUT_JAW_ROOT_W;
+        const tipW = OUT_JAW_TIP_W;
+        const shape = new THREE.Shape();
+        shape.moveTo(0, 0);
+        shape.lineTo(0, -reach);
+        shape.lineTo(tipW, -reach);
+        shape.quadraticCurveTo(rootW * 0.82, -reach * 0.5, rootW, -reach * 0.22);
+        shape.lineTo(rootW, 0);
+        shape.closePath();
+        return shape;
+      }
+
+      function buildInsideJawShape() {
+        const reach = IN_JAW_REACH;
+        const rootW = IN_JAW_ROOT_W;
+        const tipR = rootW * 0.34;
+        const shape = new THREE.Shape();
+        shape.moveTo(0, 0);
+        shape.lineTo(0, reach - tipR);
+        shape.quadraticCurveTo(0, reach, tipR, reach);
+        shape.quadraticCurveTo(rootW * 0.72, reach - 1.2, rootW * 0.6, reach * 0.42);
+        shape.lineTo(rootW, 0);
+        shape.closePath();
+        return shape;
+      }
+
+      function extrudeJaw(shape, depth) {
+        const geo = new THREE.ExtrudeGeometry(shape, {
+          depth,
+          bevelEnabled: true,
+          bevelThickness: 0.5,
+          bevelSize: 0.45,
+          bevelSegments: 3,
+          curveSegments: 10,
+        });
+        geo.translate(0, 0, -depth / 2);
+        return geo;
+      }
+
+      function buildJawPair(materials) {
+        const group = new THREE.Group();
+
+        const outsideMesh = new THREE.Mesh(extrudeJaw(buildOutsideJawShape(), JAW_DEPTH), materials.satin);
+        outsideMesh.position.set(0, -BEAM_HEIGHT / 2 + 0.4, 0);
+        outsideMesh.castShadow = true;
+        outsideMesh.receiveShadow = true;
+        group.add(outsideMesh);
+
+        const contactHeight = OUT_JAW_REACH - 2;
+        const outsideContact = new THREE.Mesh(
+          new THREE.BoxGeometry(0.9, contactHeight, JAW_DEPTH - 2),
+          materials.polished
+        );
+        outsideContact.position.set(-0.4, outsideMesh.position.y - OUT_JAW_REACH / 2, 0);
+        group.add(outsideContact);
+
+        const insideMesh = new THREE.Mesh(extrudeJaw(buildInsideJawShape(), JAW_DEPTH * 0.7), materials.polished);
+        insideMesh.position.set(0, BEAM_HEIGHT / 2 - 0.4, 0);
+        insideMesh.castShadow = true;
+        insideMesh.receiveShadow = true;
+        group.add(insideMesh);
+
+        return group;
+      }
+
+      function buildCarriage(materials) {
+        const group = new THREE.Group();
+        const carriageHeight = BEAM_HEIGHT + CARRIAGE_OVERHANG * 2;
+
+        const frontPlate = new THREE.Mesh(
+          new RoundedBoxGeometry(CARRIAGE_LEN, carriageHeight, 2.4, 2, 0.5),
+          materials.satin
+        );
+        frontPlate.position.set(0, 0, BEAM_THICKNESS / 2 + 1.6);
+        frontPlate.castShadow = true;
+        frontPlate.receiveShadow = true;
+        group.add(frontPlate);
+
+        const backPlate = new THREE.Mesh(
+          new RoundedBoxGeometry(CARRIAGE_LEN * 0.86, carriageHeight * 0.9, 2, 2, 0.4),
+          materials.dark
+        );
+        backPlate.position.set(0, 0, -BEAM_THICKNESS / 2 - 1.4);
+        backPlate.castShadow = true;
+        backPlate.receiveShadow = true;
+        group.add(backPlate);
+
+        const vernierPlane = new THREE.Mesh(
+          new THREE.PlaneGeometry(VERNIER_SPAN_MM + 3, VERNIER_HEIGHT),
+          materials.vernier
+        );
+        vernierPlane.position.set(0, VERNIER_CENTER_Y, BEAM_THICKNESS / 2 + 2.85);
+        group.add(vernierPlane);
+
+        const thumbWheel = new THREE.Mesh(
+          new THREE.CylinderGeometry(4.6, 4.6, 3.4, 28),
+          materials.knurl
+        );
+        thumbWheel.rotation.x = Math.PI / 2;
+        thumbWheel.position.set(CARRIAGE_LEN / 2 - 4.5, -carriageHeight / 2 + 4.6, BEAM_THICKNESS / 2 + 2.6);
+        thumbWheel.castShadow = true;
+        group.add(thumbWheel);
+
+        const lockBase = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.8, 1.6, 20), materials.dark);
+        lockBase.position.set(-CARRIAGE_LEN / 2 + 6, carriageHeight / 2 - 0.8, 0);
+        group.add(lockBase);
+
+        const lockKnob = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 3, 16), materials.knurl);
+        lockKnob.position.set(-CARRIAGE_LEN / 2 + 6, carriageHeight / 2 + 0.9, 0);
+        lockKnob.castShadow = true;
+        group.add(lockKnob);
+
+        const depthRodLeftX = -(CARRIAGE_LEN / 2 + 2);
+        const depthRodRightX = BEAM_LENGTH + 12 - CARRIAGE_X;
+        const depthRodLength = depthRodRightX - depthRodLeftX;
+        const depthRod = new THREE.Mesh(
+          new THREE.CylinderGeometry(DEPTH_ROD_DIA / 2, DEPTH_ROD_DIA / 2, depthRodLength, 14),
+          materials.polished
+        );
+        depthRod.rotation.z = Math.PI / 2;
+        depthRod.position.set((depthRodLeftX + depthRodRightX) / 2, 0, 0);
+        group.add(depthRod);
+
+        return group;
+      }
+
+      /* ---------------------------------------------------------------
+         Renderer, scene, environment, camera
+      --------------------------------------------------------------- */
+      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.1;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.domElement.style.touchAction = 'none';
+      appEl.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.background = createBackdropTexture();
+
+      const pmremGenerator = new THREE.PMREMGenerator(renderer);
+      scene.environment = pmremGenerator.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+
+      const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 1, 5000);
+
+      /* ---------------------------------------------------------------
+         Materials
+      --------------------------------------------------------------- */
+      const knurlTexture = createKnurlTexture();
+
+      const materials = {
+        satin: new THREE.MeshPhysicalMaterial({
+          color: 0xc6cbd0,
+          metalness: 1.0,
+          roughness: 0.42,
+          envMapIntensity: 1.2,
+        }),
+        polished: new THREE.MeshPhysicalMaterial({
+          color: 0xd8dce1,
+          metalness: 1.0,
+          roughness: 0.13,
+          clearcoat: 0.35,
+          clearcoatRoughness: 0.18,
+          envMapIntensity: 1.5,
+        }),
+        dark: new THREE.MeshPhysicalMaterial({
+          color: 0x494c50,
+          metalness: 0.9,
+          roughness: 0.55,
+          envMapIntensity: 1.0,
+        }),
+        knurl: new THREE.MeshPhysicalMaterial({
+          color: 0xb7bbc0,
+          metalness: 1.0,
+          roughness: 0.5,
+          bumpMap: knurlTexture,
+          bumpScale: 0.5,
+          envMapIntensity: 1.1,
+        }),
+        scale: new THREE.MeshPhysicalMaterial({
+          map: createMainScaleTexture(),
+          metalness: 1.0,
+          roughness: 0.3,
+          envMapIntensity: 1.1,
+        }),
+        vernier: new THREE.MeshPhysicalMaterial({
+          map: createVernierScaleTexture(),
+          metalness: 1.0,
+          roughness: 0.26,
+          envMapIntensity: 1.2,
+        }),
+      };
+
+      /* ---------------------------------------------------------------
+         Assemble the caliper
+      --------------------------------------------------------------- */
+      const caliperGroup = new THREE.Group();
+
+      const beam = new THREE.Mesh(
+        new RoundedBoxGeometry(BEAM_LENGTH, BEAM_HEIGHT, BEAM_THICKNESS, 3, 1.1),
+        materials.satin
+      );
+      beam.position.x = BEAM_LENGTH / 2;
+      beam.castShadow = true;
+      beam.receiveShadow = true;
+      caliperGroup.add(beam);
+
+      const channel = new THREE.Mesh(new THREE.PlaneGeometry(BEAM_LENGTH - 6, 1.4), materials.dark);
+      channel.position.set(BEAM_LENGTH / 2, -BEAM_HEIGHT / 2 + 4, BEAM_THICKNESS / 2 + 0.03);
+      caliperGroup.add(channel);
+
+      const scalePlane = new THREE.Mesh(new THREE.PlaneGeometry(SCALE_LEN, MAIN_SCALE_HEIGHT), materials.scale);
+      scalePlane.position.set(SCALE_START + SCALE_LEN / 2, MAIN_SCALE_CENTER_Y, BEAM_THICKNESS / 2 + 0.05);
+      caliperGroup.add(scalePlane);
+
+      const fixedJaws = buildJawPair(materials);
+      fixedJaws.rotation.y = Math.PI;
+      fixedJaws.position.x = FIXED_JAW_X;
+      caliperGroup.add(fixedJaws);
+
+      const carriage = buildCarriage(materials);
+      carriage.position.x = CARRIAGE_X;
+      caliperGroup.add(carriage);
+
+      const movingJaws = buildJawPair(materials);
+      movingJaws.position.x = CARRIAGE_X;
+      caliperGroup.add(movingJaws);
+
+      scene.add(caliperGroup);
+
+      /* ---------------------------------------------------------------
+         Lights
+      --------------------------------------------------------------- */
+      const keyLight = new THREE.DirectionalLight(0xffffff, 2.6);
+      keyLight.position.set(120, 190, 150);
+      keyLight.castShadow = true;
+      keyLight.shadow.mapSize.set(1024, 1024);
+      keyLight.shadow.camera.left = -140;
+      keyLight.shadow.camera.right = 140;
+      keyLight.shadow.camera.top = 140;
+      keyLight.shadow.camera.bottom = -140;
+      keyLight.shadow.camera.near = 10;
+      keyLight.shadow.camera.far = 600;
+      keyLight.shadow.bias = -0.0015;
+      keyLight.shadow.radius = 4;
+      scene.add(keyLight);
+
+      const fillLight = new THREE.DirectionalLight(0xcfe0ff, 0.7);
+      fillLight.position.set(-150, 70, -60);
+      scene.add(fillLight);
+
+      const rimLight = new THREE.DirectionalLight(0xffffff, 1.3);
+      rimLight.position.set(-30, 130, -190);
+      scene.add(rimLight);
+
+      const hemi = new THREE.HemisphereLight(0x3c3f44, 0x0a0a0b, 0.4);
+      scene.add(hemi);
+
+      /* ---------------------------------------------------------------
+         Floor (soft contact shadow + faint sheen)
+      --------------------------------------------------------------- */
+      const floorMaterial = new THREE.MeshStandardMaterial({
+        color: 0x08090a,
+        roughness: 0.85,
+        metalness: 0.05,
+        envMapIntensity: 0.3,
+      });
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), floorMaterial);
+      floor.rotation.x = -Math.PI / 2;
+      floor.receiveShadow = true;
+      scene.add(floor);
+
+      /* ---------------------------------------------------------------
+         Recentre the model on the origin, then frame the camera using
+         its real, measured bounding box (so nothing can end up
+         cropped or off-screen no matter what the exact dimensions are)
+      --------------------------------------------------------------- */
+      let bbox = new THREE.Box3().setFromObject(caliperGroup);
+      const center = bbox.getCenter(new THREE.Vector3());
+      caliperGroup.position.sub(center);
+      caliperGroup.updateMatrixWorld(true);
+      bbox = new THREE.Box3().setFromObject(caliperGroup);
+      const modelSize = bbox.getSize(new THREE.Vector3());
+      floor.position.y = bbox.min.y - 2;
+
+      const maxDim = Math.max(modelSize.x, modelSize.y, modelSize.z);
+      const halfFovRad = (camera.fov * Math.PI) / 360;
+      const fitDistance = (maxDim / 2 / Math.tan(halfFovRad)) * 1.7;
+
+      camera.position.set(fitDistance * 0.55, fitDistance * 0.35, fitDistance * 0.78);
+      camera.near = Math.max(0.5, fitDistance / 100);
+      camera.far = fitDistance * 20;
+      camera.updateProjectionMatrix();
+
+      /* ---------------------------------------------------------------
+         Touch / mouse controls
+         One-finger drag orbits, two-finger pinch zooms and pans —
+         this is the OrbitControls default, so it is not overridden.
+         Both rotation axes are left free (no azimuth limit; polar
+         limited only just shy of the poles) so front/back/left/right/
+         top/bottom are all reachable by drag alone.
+      --------------------------------------------------------------- */
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.target.set(0, 0, 0);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.rotateSpeed = 0.85;
+      controls.zoomSpeed = 0.9;
+      controls.panSpeed = 0.7;
+      controls.screenSpacePanning = true;
+      controls.minDistance = fitDistance * 0.22;
+      controls.maxDistance = fitDistance * 2.4;
+      controls.minPolarAngle = 0.05;
+      controls.maxPolarAngle = Math.PI - 0.05;
+      controls.update();
+
+      const prefersReducedMotion =
+        window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!prefersReducedMotion) {
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.6;
+      }
+      controls.addEventListener('start', () => {
+        controls.autoRotate = false;
+      });
+
+      /* ---------------------------------------------------------------
+         Resize
+      --------------------------------------------------------------- */
+      function onResize() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      }
+      window.addEventListener('resize', onResize);
+      window.addEventListener('orientationchange', () => setTimeout(onResize, 250));
+
+      /* ---------------------------------------------------------------
+         Hint fade-out
+      --------------------------------------------------------------- */
+      let hintHidden = false;
+      function hideHint() {
+        if (hintHidden) return;
+        hintHidden = true;
+        hintEl.classList.add('hidden');
+      }
+      setTimeout(hideHint, 5000);
+      renderer.domElement.addEventListener('pointerdown', hideHint, { once: true });
+
+      /* ---------------------------------------------------------------
+         Render loop
+      --------------------------------------------------------------- */
+      let firstFrame = false;
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+        if (!firstFrame) {
+          firstFrame = true;
+          loadingEl.classList.add('hidden');
+        }
+      }
+      animate();
+
+    } catch (err) {
+      showFatalError(err);
+    }
+  </script>
+</body>
+</html>
